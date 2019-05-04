@@ -1,0 +1,468 @@
+#!/bin/bash
+
+#
+# Copyright (c) 2019 Kalray
+# Marc POULHIÈS
+#
+
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+SUBDIRECTORY_OK=Yes
+OPTIONS_KEEPDASHDASH=
+OPTIONS_STUCKLONG=t
+
+arc_cmd=arc
+
+prefix_refs=refs/adiff/
+prefix_rev_branch=dev/$USER.arcdiff/
+
+create_branch=1
+no_force_request_review=0
+
+dashless=$(basename "$0" | sed -e 's/-/ /')
+OPTIONS_SPEC="\
+$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--add-diffid] [--no-create-branch] [--update <DIFF_ID>] [<base>] <upstream> <branch>
+$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] --continue
+$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--add-diffid] --update-current
+$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
+$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
+$dashless [--dryrun] [--verbose] --rollback-and-clean
+--
+ Available options are
+v,verbose!         display some garbage
+no-create-branch!     do not create a branch for the new code review
+depends-on=!	      add dependency on given existing code review
+continue!          continue after fixing a failed rebase
+dryrun!             only pretends to do something
+update-current!            update the existing code review bound to current checked out branch
+update=!             same behavior as for creating a new review, but updates an existing review
+no-force-request-review! when updating, do not force the review state.
+rollback-and-clean!	 rolls back to state before previous arcdiff command
+arc=!    	   path to the arc command
+add-diffid!	   when updating/creating a review, modify the original commit message if needed to add reference to code review
+add-diffid-in-head=!	add a reference to differential revision in commit message of HEAD
+"
+source "$(git --exec-path)/git-sh-setup"
+
+
+function correct_diff_id {
+    if [[ ! "$1" =~ ^D[0-9][0-9]*$ ]]
+    then
+	echo "Invalid differential reference: $1"
+	exit 1
+    fi
+}
+
+set -ue
+
+add_diffid=0
+add_diffid_in_head=0
+is_rollback=0
+continue_from_rebase=0
+update_instead_of_create=""
+update_current=0
+dryrun=""
+depends_on=0
+
+total_argc=$#
+
+while test $# != 0
+do
+	case "$1" in
+	--arc=*)
+	    arc_cmd="${1#--arc=}"
+	    ;;
+
+	--update=*)
+	    update_instead_of_create="${1#--update=}"
+	    correct_diff_id $update_instead_of_create
+	    ;;
+
+	--add-diffid-in-head=*)
+	    add_diffid_in_head="${1#--add-diffid-in-head=}"
+	    correct_diff_id $add_diffid_in_head
+	    ;;
+
+	--depends-on=*)
+	    depends_on="${1#--depends-on=}"
+	    correct_diff_id $depends_on
+	    ;;
+
+	--dryrun)
+	    dryrun="echo"
+	    ;;
+
+	--add-diffid)
+	    add_diffid=1
+	    ;;
+
+	--no-force-request-review)
+	    no_force_request_review="1"
+	    ;;
+
+	--update-current)
+	    update_current="1"
+	    ;;
+
+	--continue)
+	    continue_from_rebase="1"
+	    ;;
+
+	--rollback-and-clean)
+	    is_rollback=1
+	    ;;
+
+	--no-create-branch)
+	    create_branch="0"
+	    ;;
+
+	--)
+	    shift
+	    break
+	    ;;
+
+	*)
+	    break
+	    ;;
+
+	esac
+	shift
+done
+
+branch_to_clean=()
+
+function cleanup_files {
+    rm -f "$GIT_DIR"/arcdiff-seq-edit "$GIT_DIR"/arcdiff-prev "$GIT_DIR"/arcdiff-target "$GIT_DIR"/arcdiff-range  "$GIT_DIR"/arcdiff-is-detached
+    if [[ ${#branch_to_clean[*]} > 0 ]]
+    then
+	${dryrun} git branch -D ${branch_to_clean[*]}
+    fi
+}
+
+function restore_previous_state {
+    local local_is_detached_head="$1"
+    local local_prev_refs="$2"
+
+    if [[ "$local_is_detached_head" == 0 ]]
+    then
+	${dryrun} git symbolic-ref HEAD $local_prev_refs
+	${dryrun} git reset --hard
+	${dryrun} git symbolic-ref -d ${prefix_refs}BACKUP_STATE
+
+    else
+	${dryrun} git reset --hard  $local_prev_refs
+	${dryrun} git update-ref -d ${prefix_refs}BACKUP_STATE
+    fi
+}
+
+function force_request_review_state {
+    diff_to_update=$1
+
+    set -o pipefail
+    echo '{
+            "transactions": [
+              {
+                "type": "request-review",
+                "value": true
+              }
+            ],
+            "objectIdentifier": ' "\"$diff_to_update\"" '
+          }' | ${dryrun} $arc_cmd call-conduit differential.revision.edit
+}
+
+## invoked recursively from the final rebase command
+if [[ -f "$GIT_DIR"/arcdiff-seq-edit && $add_diffid_in_head == 0 && $is_rollback == 0 ]]
+then
+    tmp_todo=$(mktemp)
+
+    todo_file="$1"
+    diff_id=$(cat "$GIT_DIR"/arcdiff-seq-edit)
+    prev_refs=$(cat "$GIT_DIR"/arcdiff-prev)
+    target_branch=$(cat "$GIT_DIR"/arcdiff-target)
+    range_for_rebase=$(cat "$GIT_DIR"/arcdiff-range)
+
+    while read action_line
+    do
+	echo "$action_line" >> $tmp_todo
+
+	if [[ ! "$action_line" =~ ^pick ]]
+	then
+	    continue
+	fi
+
+	cur_sha1=$(echo "$action_line" | awk '{print $2;}')
+
+	if grep -q $cur_sha1 <(git rev-list ^$range_for_rebase)
+	then
+	    echo "exec git arcdiff --add-diffid-in-head $diff_id" >> $tmp_todo
+	fi
+    done < $todo_file
+
+    mv $tmp_todo $todo_file
+    exit 0
+fi
+
+
+is_detached_head=0
+
+if [[ "$is_rollback" == 1 ]]
+then
+    if [[ -f "$GIT_DIR"/arcdiff-prev ]]
+    then
+	prev_refs=$(cat "$GIT_DIR"/arcdiff-prev)
+	if [[ -f "$GIT_DIR"/arcdiff-is-detached ]]
+	then
+	    is_detached_head=1
+	fi
+
+	## this is not useful, but display it.
+	if [[ -f "$GIT_DIR"/arcdiff-target ]]
+	then
+	    target_branch=$(cat "$GIT_DIR"/arcdiff-target)
+	fi
+
+	## this is not useful, but display it.
+	if [[ -f "$GIT_DIR"/arcdiff-range ]]
+	then
+	    range_for_rebase=$(cat "$GIT_DIR"/arcdiff-range)
+	fi
+
+	restore_previous_state $is_detached_head $prev_refs
+	cleanup_files
+	exit 0
+    else
+	echo "The state does not look so good, better not doing anything automatically. Time to call IT !"
+	exit 1
+    fi
+elif [[ "$add_diffid_in_head" != 0 ]]
+then
+    TMP_COMMIT=$(mktemp)
+    TMP_COMMIT2=$(mktemp)
+    ${dryrun} git rev-list --format=%B --max-count=1 HEAD | tail -n +2 > $TMP_COMMIT
+
+    if ! grep -q 'Differential Revision:' $TMP_COMMIT
+    then
+	head -n2 $TMP_COMMIT > $TMP_COMMIT2
+
+	if grep -q -e '^[[:space:]]*\*' <(tail -n +3 $TMP_COMMIT| head -n1)
+	then
+	    echo "Differential Revision:" >> $TMP_COMMIT2
+	    echo "" >> $TMP_COMMIT2
+	    tail -n +3 $TMP_COMMIT >> $TMP_COMMIT2
+	else
+	    tail -n +3 $TMP_COMMIT | sed "0,/^[[:space:]]*\$/s/^[[:space:]]*\$/\nDifferential Revision: $add_diffid_in_head\n/" >> $TMP_COMMIT2
+	fi
+
+	${dryrun} git commit --amend -F $TMP_COMMIT2
+    fi
+
+    rm $TMP_COMMIT2 $TMP_COMMIT
+
+    exit 0
+fi
+
+if [[ "$update_current" == 1 && "$continue_from_rebase" == 1 ]]
+then
+    echo "Can't have --continue and --update-current at the same time"
+    exit 1
+fi
+
+## Regular case of creating a new review or updating an existing one from a given DIFF_ID
+## Massage parameters
+if [[ "$update_current" == 0 && "$continue_from_rebase" == 0 ]]
+then
+    if [[ "$depends_on" != 0 ]]
+    then
+	## expect only a range spec
+	if [[ "$#" < 2 ]]
+	then
+	    echo 'Missing <upstream> and <branch> parameters (see git rebase help)'
+	    exit 1
+	fi
+
+	## will be set later after arc patch has been used
+	target_branch="0"
+    else
+	## expect a regular target + range spec on command line
+	if [[ "$#" < 3 ]]
+	then
+	    echo 'Missing <base> <upstream> and <branch> parameters (see git rebase help)'
+	    exit 1
+	fi
+
+	target_branch="$1"
+	shift
+    fi
+
+    IFS=$'\n'
+    revs=($(git rev-parse  $*))
+    unset IFS
+##    revs=("${revs[@]%%:*}")
+    range_for_rebase="${revs[*]}"
+
+    if [[ -f "$GIT_DIR"/arcdiff-prev || -f "$GIT_DIR"/arcdiff-target || -f "$GIT_DIR"/arcdiff-range || -f  "$GIT_DIR"/arcdiff-is-detached ]]
+    then
+	echo "It looks like some git-arcdiff files are still present."
+	echo "Clean any " "$GIT_DIR/arcdiff" "after making sure everything is correct (see --rollback-and-clean)"
+       exit 1
+    fi
+
+    if prev_refs=$(git symbolic-ref -q HEAD)
+    then
+	echo "On $prev_refs branch"
+    elif prev_refs=$(git rev-parse --verify HEAD)
+    then
+	echo "On detached HEAD at $prev_refs"
+	is_detached_head=1
+	echo 1 > "$GIT_DIR"/arcdiff-is-detached
+    else
+	echo "Can't understand current state"
+	exit 1
+    fi
+
+    echo $prev_refs > "$GIT_DIR"/arcdiff-prev
+    if [[ $target_branch != 0 ]]
+    then
+	echo $target_branch > "$GIT_DIR"/arcdiff-target
+    fi
+    echo $range_for_rebase > "$GIT_DIR"/arcdiff-range
+
+    ## Create a symbolic ref pointing to current state
+    if [[ $is_detached_head == 0 ]]
+    then
+	## make a symbolic ref to currently checked-out branch
+	${dryrun} git symbolic-ref -m 'Allow rollback from arc diff' ${prefix_refs}BACKUP_STATE $prev_refs
+    else
+	## create a new ref to current detached HEAD rev
+	${dryrun} git update-ref ${prefix_refs}BACKUP_STATE $prev_refs
+    fi
+
+    if [[ "$depends_on" != 0 ]]
+    then
+	if ! ${dryrun} $arc_cmd patch $depends_on
+	then
+	    echo "Error during arc patch command for setting dependency on $depends_on"
+	    exit 1
+	fi
+	target_branch=$(git symbolic-ref HEAD | sed -e 's,.*/\(.*\),\1,')
+	branch_to_clean+=("$target_branch")
+    fi
+
+    ## starting from here, HEAD is moving.
+    ##cmd="${dryrun} git rebase --onto  $target_branch $range_for_rebase"
+    ##if ! eval "$cmd"
+    if ! ${dryrun} git rebase --onto  $target_branch $range_for_rebase
+    then
+	echo "Fix the rebase as usual, then run: $dashless --continue"
+	exit 1
+    fi
+
+elif [[ "$update_current" == 1 ]]
+then
+    if prev_refs=$(git symbolic-ref -q HEAD)
+    then
+	DIFF_TO_UPDATE=$(echo $prev_refs | sed -e 's@^.*\(D[0-9]*\)$@\1@g')
+    else
+	echo "On detached HEAD, can't update a review without being on a dedicated branch."
+	exit 1
+    fi
+
+    if ! ${dryrun} $arc_cmd diff --update $DIFF_TO_UPDATE
+    then
+	exit $?
+    fi
+
+    if [[ "$no_force_request_review" == "0" ]]
+    then
+	if ! force_request_review_state $DIFF_TO_UPDATE
+	then
+	    exit 1
+	fi
+    fi
+else
+    ## continue == 1
+
+    prev_refs=$(cat "$GIT_DIR"/arcdiff-prev)
+    target_branch=$(cat "$GIT_DIR"/arcdiff-target)
+    range_for_rebase=$(cat "$GIT_DIR"/arcdiff-range)
+
+    if [[ -f "$GIT_DIR"/arcdiff-is-detached ]]
+    then
+	is_detached_head=1
+    fi
+    
+    if ! ${dryrun} git rebase --continue
+    then
+	echo "Fix the rebase as usual, then run: $dashless --continue"
+	exit 1
+    fi
+fi
+
+sha1_before_arc_rewrite=$(git rev-parse HEAD)
+
+
+# New review or updating existing one
+
+if [[ "$update_instead_of_create" == "" ]]
+then
+    ARC_EXTRA_ARGS=("--create")
+else
+    ARC_EXTRA_ARGS=("--update" "$update_instead_of_create")
+fi
+${dryrun} $arc_cmd diff ${ARC_EXTRA_ARGS[*]} $target_branch
+
+if [[ "$dryrun" == "" ]]
+then
+    if [[ "$update_instead_of_create" != "" ]]
+    then
+	DIFF_REV=$update_instead_of_create
+	if ! force_request_review_state $DIFF_REV
+	then
+	    echo Failed to force review request
+	    exit 1
+	fi
+    else
+	DIFF_REV=$(git show HEAD | grep 'Differential Revision:' | sed -e 's@.*[a-zA-z0-9-_]*/\(D[0-9]*\)@\1@g')
+	if [[ "$DIFF_REV" == "" ]]; then
+	    echo Missing diff info in commit
+	    echo "Previous state (found in ${prefix_refs}BACKUP_STATE) can be recovered with:"
+	    echo "git symbolic-ref HEAD $prev_refs"
+	    exit 1
+	fi
+    fi
+else
+    DIFF_REV=DUMMY
+fi
+
+echo $DIFF_REV
+
+if [[ "$create_branch" != "0" ]]; then
+    rev_obj=${prefix_rev_branch}$DIFF_REV
+    ${dryrun} git branch -f ${prefix_rev_branch}$DIFF_REV $sha1_before_arc_rewrite || die "Could not create branch"
+else
+    rev_obj=${prefix_refs}$DIFF_REV
+    ${dryrun} git update-ref ${prefix_refs}$DIFF_REV $sha1_before_arc_rewrite
+fi
+
+restore_previous_state $is_detached_head $prev_refs
+
+if [[ "$add_diffid" != 0 ]]
+then
+    ${dryrun} echo $DIFF_REV > "$GIT_DIR"/arcdiff-seq-edit
+    GIT_SEQUENCE_EDITOR="$dashless" ${dryrun} git rebase -i $(echo $range_for_rebase | awk '{print $1;}')
+    ${dryrun} rm "$GIT_DIR"/arcdiff-seq-edit
+fi
+
+cleanup_files
