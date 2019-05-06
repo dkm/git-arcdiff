@@ -23,6 +23,7 @@ SUBDIRECTORY_OK=Yes
 OPTIONS_KEEPDASHDASH=
 OPTIONS_STUCKLONG=t
 
+arc_common_args=--no-ansi
 arc_cmd=arc
 
 prefix_refs=refs/adiff/
@@ -182,6 +183,13 @@ function force_request_review_state {
           }' | ${dryrun} $arc_cmd call-conduit differential.revision.edit
 }
 
+if ! command -v $arc_cmd &> /dev/null
+then
+    echo "arc command command not found: $arc_cmd. Use --larc or fix you environment"
+    exit 1
+fi
+arc_cmd="$arc_cmd $arc_common_args "
+
 ## invoked recursively from the final rebase command
 if [[ -f "$GIT_DIR"/arcdiff-seq-edit && $add_diffid_in_head == 0 && $is_rollback == 0 ]]
 then
@@ -221,6 +229,13 @@ if [[ "$is_rollback" == 1 ]]
 then
     if [[ -f "$GIT_DIR"/arcdiff-prev ]]
     then
+	## First, abort the potential partial rebase
+	if [[ -d ".git/rebase-merge" || -d ".git/rebase-apply" ]]
+	then
+	    git rebase --abort
+	fi
+
+	## Then cleanup our own mess.
 	prev_refs=$(cat "$GIT_DIR"/arcdiff-prev)
 	if [[ -f "$GIT_DIR"/arcdiff-is-detached ]]
 	then
