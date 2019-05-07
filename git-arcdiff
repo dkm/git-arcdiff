@@ -24,7 +24,11 @@ OPTIONS_KEEPDASHDASH=
 OPTIONS_STUCKLONG=t
 
 arc_common_args=--no-ansi
-arc_cmd=arc
+
+if ! arc_cmd=$(git config arcdiff.arc)
+then
+    arc_cmd=arc
+fi
 
 prefix_refs=refs/adiff/
 prefix_rev_branch=dev/$USER.arcdiff/
