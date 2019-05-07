@@ -453,7 +453,7 @@ then
 	    exit 1
 	fi
     else
-	DIFF_REV=$(git show HEAD | grep 'Differential Revision:' | sed -e 's@.*[a-zA-z0-9-_]*/\(D[0-9]*\)@\1@g')
+	DIFF_REV=$(git show HEAD | grep 'Differential Revision:' | sed -e 's@.*[-a-zA-Z0-9_]*/\(D[0-9]*\)@\1@g')
 	if [[ "$DIFF_REV" == "" ]]; then
 	    echo Missing diff info in commit
 	    echo "Previous state (found in ${prefix_refs}BACKUP_STATE) can be recovered with:"
