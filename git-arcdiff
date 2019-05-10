@@ -389,6 +389,14 @@ then
     ## starting from here, HEAD is moving.
     ##cmd="${dryrun} git rebase --onto  $target_branch $range_for_rebase"
     ##if ! eval "$cmd"
+
+    ## detach so that the rebase won't leave us on the checked-out
+    ## branch and let arc cripple it's commit.
+    if [[ $is_detached_head == 0 ]]
+    then
+	${dryrun} git checkout --detach
+    fi
+
     if ! ${dryrun} git rebase --onto  $target_branch $range_for_rebase
     then
 	echo "Fix the rebase as usual, then run: $dashless --continue"
