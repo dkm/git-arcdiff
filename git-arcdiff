@@ -43,7 +43,7 @@ $dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] --continue
 $dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--add-diffid] --update-current
 $dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
 $dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
-$dashless [--dryrun] [--verbose] --rollback-and-clean
+$dashless [--dryrun] [--verbose] --abort
 --
  Available options are
 v,verbose!         display some garbage
@@ -54,7 +54,7 @@ dryrun!             only pretends to do something
 update-current!            update the existing code review bound to current checked out branch
 update=!             same behavior as for creating a new review, but updates an existing review
 no-force-request-review! when updating, do not force the review state.
-rollback-and-clean!	 rolls back to state before previous arcdiff command
+abort!	 rolls back to state before previous arcdiff command
 arc=!    	   path to the arc command
 add-diffid!	   when updating/creating a review, modify the original commit message if needed to add reference to code review
 add-diffid-in-head=!	add a reference to differential revision in commit message of HEAD
@@ -125,7 +125,7 @@ do
 	    continue_from_rebase="1"
 	    ;;
 
-	--rollback-and-clean)
+	--abort)
 	    is_rollback=1
 	    ;;
 
