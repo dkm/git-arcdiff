@@ -189,6 +189,37 @@ function force_request_review_state {
           }' | ${dryrun} $arc_cmd call-conduit differential.revision.edit
 }
 
+function rollback {
+    ## First, abort the potential partial rebase
+    if [[ -d ".git/rebase-merge" || -d ".git/rebase-apply" ]]
+    then
+	git rebase --abort
+    fi
+
+    ## Then cleanup our own mess.
+    prev_refs=$(cat "$GIT_DIR"/arcdiff-prev)
+    if [[ -f "$GIT_DIR"/arcdiff-is-detached ]]
+    then
+	is_detached_head=1
+    fi
+
+    ## this is not useful, but display it.
+    if [[ -f "$GIT_DIR"/arcdiff-target ]]
+    then
+	target_branch=$(cat "$GIT_DIR"/arcdiff-target)
+    fi
+
+    ## this is not useful, but display it.
+    if [[ -f "$GIT_DIR"/arcdiff-range ]]
+    then
+	range_for_rebase=$(cat "$GIT_DIR"/arcdiff-range)
+    fi
+
+    restore_previous_state $is_detached_head $prev_refs
+    cleanup_files
+    return 0
+}
+
 if ! command -v $arc_cmd &> /dev/null
 then
     echo "arc command command not found: $arc_cmd. Use --larc or fix you environment"
@@ -228,43 +259,17 @@ then
     exit 0
 fi
 
-
 is_detached_head=0
 
 if [[ "$is_rollback" == 1 ]]
 then
     if [[ -f "$GIT_DIR"/arcdiff-prev ]]
     then
-	## First, abort the potential partial rebase
-	if [[ -d ".git/rebase-merge" || -d ".git/rebase-apply" ]]
-	then
-	    git rebase --abort
-	fi
-
-	## Then cleanup our own mess.
-	prev_refs=$(cat "$GIT_DIR"/arcdiff-prev)
-	if [[ -f "$GIT_DIR"/arcdiff-is-detached ]]
-	then
-	    is_detached_head=1
-	fi
-
-	## this is not useful, but display it.
-	if [[ -f "$GIT_DIR"/arcdiff-target ]]
-	then
-	    target_branch=$(cat "$GIT_DIR"/arcdiff-target)
-	fi
-
-	## this is not useful, but display it.
-	if [[ -f "$GIT_DIR"/arcdiff-range ]]
-	then
-	    range_for_rebase=$(cat "$GIT_DIR"/arcdiff-range)
-	fi
-
-	restore_previous_state $is_detached_head $prev_refs
-	cleanup_files
-	exit 0
+	rollback
+	exit $?
     else
-	echo "The state does not look so good, better not doing anything automatically. Time to call IT !"
+	echo "The state does not look so good, better not doing anything automatically."
+	echo "Time to call IT !"
 	exit 1
     fi
 elif [[ "$add_diffid_in_head" != 0 ]]
@@ -402,6 +407,8 @@ then
 
     if ! ${dryrun} $arc_cmd diff --update $DIFF_TO_UPDATE
     then
+	echo "arc command returned with an error ($?), rolling back all changes"
+	rollback
 	exit $?
     fi
 
@@ -442,7 +449,13 @@ then
 else
     ARC_EXTRA_ARGS=("--update" "$update_instead_of_create")
 fi
-${dryrun} $arc_cmd diff ${ARC_EXTRA_ARGS[*]} $target_branch
+
+if ! ${dryrun} $arc_cmd diff ${ARC_EXTRA_ARGS[*]} $target_branch
+then
+    echo "arc command returned with an error ($?), rolling back all changes"
+    rollback
+    exit $?
+fi
 
 if [[ "$dryrun" == "" ]]
 then
