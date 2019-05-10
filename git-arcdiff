@@ -148,6 +148,8 @@ done
 
 branch_to_clean=()
 
+require_clean_work_tree "arcdiff" "$(gettext "Please commit or stash them.")"
+
 function cleanup_files {
     rm -f "$GIT_DIR"/arcdiff-seq-edit "$GIT_DIR"/arcdiff-prev "$GIT_DIR"/arcdiff-target "$GIT_DIR"/arcdiff-range  "$GIT_DIR"/arcdiff-is-detached
     if [[ ${#branch_to_clean[*]} > 0 ]]
