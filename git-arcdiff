@@ -276,22 +276,21 @@ elif [[ "$add_diffid_in_head" != 0 ]]
 then
     TMP_COMMIT=$(mktemp)
     TMP_COMMIT2=$(mktemp)
+
+    ## skip the SHA1 line
     ${dryrun} git rev-list --format=%B --max-count=1 HEAD | tail -n +2 > $TMP_COMMIT
 
     if ! grep -q 'Differential Revision:' $TMP_COMMIT
     then
-	head -n2 $TMP_COMMIT > $TMP_COMMIT2
 
-	if grep -q -e '^[[:space:]]*\*' <(tail -n +3 $TMP_COMMIT| head -n1)
+	if ! grep -q -e '^$' <(tail -n1 $TMP_COMMIT )
 	then
-	    echo "Differential Revision:" >> $TMP_COMMIT2
-	    echo "" >> $TMP_COMMIT2
-	    tail -n +3 $TMP_COMMIT >> $TMP_COMMIT2
-	else
-	    tail -n +3 $TMP_COMMIT | sed "0,/^[[:space:]]*\$/s/^[[:space:]]*\$/\nDifferential Revision: $add_diffid_in_head\n/" >> $TMP_COMMIT2
+	    echo >> $TMP_COMMIT
 	fi
 
-	${dryrun} git commit --amend -F $TMP_COMMIT2
+	echo "Differential Revision: $add_diffid_in_head" >> $TMP_COMMIT
+
+	${dryrun} git commit --amend -F $TMP_COMMIT
     fi
 
     rm $TMP_COMMIT2 $TMP_COMMIT
