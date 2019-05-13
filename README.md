@@ -9,7 +9,7 @@ usage: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF
    or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--add-diffid] --update-current
    or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
    or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
-   or: git arcdiff [--dryrun] [--verbose] --rollback-and-clean
+   or: git arcdiff [--dryrun] [--verbose] --abort
 
 Available options are
     -v, --verbose         display some garbage
@@ -21,7 +21,7 @@ Available options are
     --update ...          same behavior as for creating a new review, but updates an existing review
     --no-force-request-review
                           when updating, do not force the review state.
-    --rollback-and-clean  rolls back to state before previous arcdiff command
+    --abort               rolls back to state before previous arcdiff command
     --arc ...             path to the arc command
     --add-diffid          when updating/creating a review, modify the original commit message if needed to add reference to code review
     --add-diffid-in-head ...
