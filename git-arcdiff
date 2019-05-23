@@ -340,7 +340,7 @@ then
     if [[ -f "$GIT_DIR"/arcdiff-prev || -f "$GIT_DIR"/arcdiff-target || -f "$GIT_DIR"/arcdiff-range || -f  "$GIT_DIR"/arcdiff-is-detached ]]
     then
 	echo "It looks like some git-arcdiff files are still present."
-	echo "Clean any " "$GIT_DIR/arcdiff" "after making sure everything is correct (see --rollback-and-clean)"
+	echo "Clean any " "$GIT_DIR/arcdiff" "after making sure everything is correct (see --abort)"
        exit 1
     fi
 
