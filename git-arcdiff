@@ -469,10 +469,13 @@ then
     if [[ "$update_instead_of_create" != "" ]]
     then
 	DIFF_REV=$update_instead_of_create
-	if ! force_request_review_state $DIFF_REV
+	if [[ "$no_force_request_review" == "0" ]]
 	then
-	    echo Failed to force review request
-	    exit 1
+	    if ! force_request_review_state $DIFF_REV
+	    then
+		echo Failed to force review request
+		exit 1
+	    fi
 	fi
     else
 	DIFF_REV=$(git show HEAD | grep 'Differential Revision:' | sed -e 's@.*[-a-zA-Z0-9_]*/\(D[0-9]*\)@\1@g')
