@@ -38,9 +38,9 @@ no_force_request_review=0
 
 dashless=$(basename "$0" | sed -e 's/-/ /')
 OPTIONS_SPEC="\
-$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--add-diffid] [--no-create-branch] [--update <DIFF_ID>] [<base>] <upstream> <branch>
+$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--no-add-diffid] [--no-create-branch] [--update <DIFF_ID>] [<base>] <upstream> <branch>
 $dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] --continue
-$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--add-diffid] --update-current
+$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--no-add-diffid] --update-current
 $dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
 $dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
 $dashless [--dryrun] [--verbose] --abort
@@ -56,7 +56,7 @@ update=!             same behavior as for creating a new review, but updates an 
 no-force-request-review! when updating, do not force the review state.
 abort!	 rolls back to state before previous arcdiff command
 arc=!    	   path to the arc command
-add-diffid!	   when updating/creating a review, modify the original commit message if needed to add reference to code review
+no-add-diffid!	   when updating/creating a review, do not modify the original commit message to add reference to code review
 add-diffid-in-head=!	add a reference to differential revision in commit message of HEAD
 "
 source "$(git --exec-path)/git-sh-setup"
@@ -72,7 +72,7 @@ function correct_diff_id {
 
 set -ue
 
-add_diffid=0
+add_diffid=1
 add_diffid_in_head=0
 is_rollback=0
 continue_from_rebase=0
@@ -109,8 +109,8 @@ do
 	    dryrun="echo"
 	    ;;
 
-	--add-diffid)
-	    add_diffid=1
+	--no-add-diffid)
+	    add_diffid=0
 	    ;;
 
 	--no-force-request-review)
