@@ -4,9 +4,9 @@ git arcdiff
 This is a simple wrapper for the [arc](https://secure.phabricator.com/book/phabricator/article/arcanist_diff/) command provided by [phabricator](https://phacility.com/phabricator/).
 
 ```
-usage: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--add-diffid] [--no-create-branch] [--update <DIFF_ID>] [<base>] <upstream> <branch>
+usage: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--no-add-diffid] [--no-create-branch] [--update <DIFF_ID>] [<base>] <upstream> <branch>
    or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] --continue
-   or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--add-diffid] --update-current
+   or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--no-add-diffid] --update-current
    or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
    or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
    or: git arcdiff [--dryrun] [--verbose] --abort
@@ -23,7 +23,7 @@ Available options are
                           when updating, do not force the review state.
     --abort               rolls back to state before previous arcdiff command
     --arc ...             path to the arc command
-    --add-diffid          when updating/creating a review, modify the original commit message if needed to add reference to code review
+    --no-add-diffid       when updating/creating a review, do not modify the original commit message to add reference to code review
     --add-diffid-in-head ...
                           add a reference to differential revision in commit message of HEAD
 ```
