@@ -234,8 +234,8 @@ then
 
     todo_file="$1"
     diff_id=$(cat "$GIT_DIR"/arcdiff-seq-edit)
-    prev_refs=$(cat "$GIT_DIR"/arcdiff-prev)
-    target_branch=$(cat "$GIT_DIR"/arcdiff-target)
+    ##prev_refs=$(cat "$GIT_DIR"/arcdiff-prev)
+    ##target_branch=$(cat "$GIT_DIR"/arcdiff-target)
     range_for_rebase=$(cat "$GIT_DIR"/arcdiff-range)
 
     while read action_line
