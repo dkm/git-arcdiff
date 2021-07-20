@@ -4,15 +4,18 @@ git arcdiff
 This is a simple wrapper for the [arc](https://secure.phabricator.com/book/phabricator/article/arcanist_diff/) command provided by [phabricator](https://phacility.com/phabricator/).
 
 ```
-usage: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--no-add-diffid] [--no-create-branch] [--update <DIFF_ID>] [<base>] <upstream> <branch>
-   or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] --continue
-   or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--no-add-diffid] --update-current
-   or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
-   or: git arcdiff [--dryrun] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
+usage: git arcdiff [--dryrun] [--skip-staging] [--no-lint] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--no-add-diffid] [--no-create-branch] [--update <DIFF_ID> [--verbatim]] [<base>] <upstream> <branch>
+   or: git arcdiff [--dryrun] [--skip-staging] [--no-lint] [--verbose] [--arc <ARC_PATH>] --continue
+   or: git arcdiff [--dryrun] [--skip-staging] [--no-lint] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--no-add-diffid] --update-current
+   or: git arcdiff [--dryrun] [--skip-staging] [--no-lint] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
+   or: git arcdiff [--dryrun] [--skip-staging] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
    or: git arcdiff [--dryrun] [--verbose] --abort
 
 Available options are
     -v, --verbose         display some garbage
+    --no-lint             do not apply linter
+    --verbatim            update all field in the differential form
+    --skip-staging        use the skip-staging option
     --no-create-branch    do not create a branch for the new code review
     --depends-on ...      add dependency on given existing code review
     --continue            continue after fixing a failed rebase
