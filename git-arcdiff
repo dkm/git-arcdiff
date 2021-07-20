@@ -38,15 +38,18 @@ no_force_request_review=0
 
 dashless=$(basename "$0" | sed -e 's/-/ /')
 OPTIONS_SPEC="\
-$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--no-add-diffid] [--no-create-branch] [--update <DIFF_ID>] [<base>] <upstream> <branch>
-$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] --continue
-$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--no-add-diffid] --update-current
-$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
-$dashless [--dryrun] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
+$dashless [--dryrun] [--skip-staging] [--no-lint] [--verbose] [--arc <ARC_PATH>] [--depends-on <DIFF_ID>] [--no-add-diffid] [--no-create-branch] [--update <DIFF_ID> [--verbatim]] [<base>] <upstream> <branch>
+$dashless [--dryrun] [--skip-staging] [--no-lint] [--verbose] [--arc <ARC_PATH>] --continue
+$dashless [--dryrun] [--skip-staging] [--no-lint] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review] [--no-add-diffid] --update-current
+$dashless [--dryrun] [--skip-staging] [--no-lint] [--verbose] [--arc <ARC_PATH>] [--no-force-request-review]
+$dashless [--dryrun] [--skip-staging] [--verbose] [--arc <ARC_PATH>] --add-diffid-in-head <DIFF_ID>
 $dashless [--dryrun] [--verbose] --abort
 --
  Available options are
 v,verbose!         display some garbage
+no-lint!          do not apply linter
+verbatim!          update all field in the differential form
+skip-staging!          use the skip-staging option
 no-create-branch!     do not create a branch for the new code review
 depends-on=!	      add dependency on given existing code review
 continue!          continue after fixing a failed rebase
@@ -80,6 +83,9 @@ update_instead_of_create=""
 update_current=0
 dryrun=""
 depends_on=0
+no_lint=" "
+skip_staging=" "
+verbatim=" "
 
 total_argc=$#
 
@@ -92,17 +98,29 @@ do
 
 	--update=*)
 	    update_instead_of_create="${1#--update=}"
-	    correct_diff_id $update_instead_of_create
+	    correct_diff_id "$update_instead_of_create"
 	    ;;
 
 	--add-diffid-in-head=*)
 	    add_diffid_in_head="${1#--add-diffid-in-head=}"
-	    correct_diff_id $add_diffid_in_head
+	    correct_diff_id "$add_diffid_in_head"
+	    ;;
+
+	--verbatim)
+	    verbatim="--verbatim"
+	    ;;
+
+	--skip-staging)
+	    skip_staging="--skip-staging"
+	    ;;
+
+	--no-lint)
+	    no_lint="--nolint"
 	    ;;
 
 	--depends-on=*)
 	    depends_on="${1#--depends-on=}"
-	    correct_diff_id $depends_on
+	    correct_diff_id "$depends_on"
 	    ;;
 
 	--dryrun)
@@ -152,9 +170,9 @@ require_clean_work_tree "arcdiff" "$(gettext "Please commit or stash them.")"
 
 function cleanup_files {
     rm -f "$GIT_DIR"/arcdiff-seq-edit "$GIT_DIR"/arcdiff-prev "$GIT_DIR"/arcdiff-target "$GIT_DIR"/arcdiff-range  "$GIT_DIR"/arcdiff-is-detached
-    if [[ ${#branch_to_clean[*]} > 0 ]]
+    if [[ ${#branch_to_clean[*]} -gt 0 ]]
     then
-	${dryrun} git branch -D ${branch_to_clean[*]}
+	${dryrun} git branch -D "${branch_to_clean[*]}"
     fi
 }
 
@@ -164,12 +182,12 @@ function restore_previous_state {
 
     if [[ "$local_is_detached_head" == 0 ]]
     then
-	${dryrun} git symbolic-ref HEAD $local_prev_refs
+	${dryrun} git symbolic-ref HEAD "$local_prev_refs"
 	${dryrun} git reset --hard
 	${dryrun} git symbolic-ref -d ${prefix_refs}BACKUP_STATE
 
     else
-	${dryrun} git reset --hard  $local_prev_refs
+	${dryrun} git reset --hard  "$local_prev_refs"
 	${dryrun} git update-ref -d ${prefix_refs}BACKUP_STATE
     fi
 }
@@ -215,12 +233,12 @@ function rollback {
 	range_for_rebase=$(cat "$GIT_DIR"/arcdiff-range)
     fi
 
-    restore_previous_state $is_detached_head $prev_refs
+    restore_previous_state "$is_detached_head" "$prev_refs"
     cleanup_files
     return 0
 }
 
-if ! command -v $arc_cmd &> /dev/null
+if ! command -v "$arc_cmd" &> /dev/null
 then
     echo "arc command command not found: $arc_cmd. Use --larc or fix you environment"
     exit 1
@@ -412,7 +430,7 @@ then
 	exit 1
     fi
 
-    if ! ${dryrun} $arc_cmd diff --update $DIFF_TO_UPDATE
+    if ! ${dryrun} $arc_cmd diff $skip_staging $verbatim $no_lint --update $DIFF_TO_UPDATE
     then
 	echo "arc command returned with an error ($?), rolling back all changes"
 	rollback
@@ -457,7 +475,7 @@ else
     ARC_EXTRA_ARGS=("--update" "$update_instead_of_create")
 fi
 
-if ! ${dryrun} $arc_cmd diff ${ARC_EXTRA_ARGS[*]} $target_branch
+if ! ${dryrun} $arc_cmd diff $verbatim $skip_staging $no_lint ${ARC_EXTRA_ARGS[*]} $target_branch
 then
     echo "arc command returned with an error ($?), rolling back all changes"
     rollback
